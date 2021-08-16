@@ -113,7 +113,9 @@ class ECBSTA {
     //     return false;
     //   }
     // }
-
+    for (size_t i = 0; i < initialStates.size(); ++i)
+      if (!m_env.checkConstraintForState(initialStates[i])) return false;
+      
     for (size_t i = 0; i < initialStates.size(); ++i) {
       if (i < solution.size() && solution[i].states.size() > 1) {
         std::cout << initialStates[i] << " " << solution[i].states.front().first
@@ -266,7 +268,7 @@ class ECBSTA {
         // (optional) check that this constraint was not included already
         // std::cout << newNode.constraints[i] << std::endl;
         // std::cout << c.second << std::endl;
-        assert(!newNode.constraints[i].overlap(c.second));
+        assert(m_env.get_k() > 0 || !newNode.constraints[i].overlap(c.second));
 
         newNode.constraints[i].add(c.second);
 
@@ -483,6 +485,11 @@ class ECBSTA {
     void onDiscover(const State& /*s*/, Cost /*fScore*/, Cost /*gScore*/) {
       // std::cout << "LL discover: " << s << std::endl;
       // m_env.onDiscoverLowLevel(s, m_agentIdx, m_constraints);
+    }
+    
+    bool checkConstraintForState(const State& s)
+    {
+      return m_env.checkConstraintForState(s);
     }
 
    private:
