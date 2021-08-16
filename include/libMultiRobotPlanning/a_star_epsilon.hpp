@@ -85,6 +85,7 @@ class AStarEpsilon {
 
   bool search(const State& startState,
               PlanResult<State, Action, Cost>& solution) {
+    if (!m_env.checkConstraintForState(startState)) return false;
     solution.states.clear();
     solution.states.push_back(std::make_pair<>(startState, 0));
     solution.actions.clear();
