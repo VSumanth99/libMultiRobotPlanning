@@ -72,7 +72,7 @@ class SIPP {
     Cost end;
 
     friend bool operator<(const interval& a, const interval& b) {
-      return a.start < b.start;
+      return (a.start < b.start) || (a.start == b.start && a.end < b.end);
     }
   };
 
@@ -99,7 +99,8 @@ class SIPP {
     if (!m_env.findSafeInterval(startState, startTime, interval)) {
       return false;
     }
-    bool success = m_astar.search(SIPPState(startState, interval), astarsolution, startTime);
+    bool success = m_astar.search(SIPPState(startState, interval),
+                                  astarsolution, startTime);
     solution.cost = astarsolution.cost - startTime;
     solution.fmin = astarsolution.fmin;
     for (size_t i = 0; i < astarsolution.actions.size(); ++i) {
@@ -136,7 +137,7 @@ class SIPP {
  private:
   // public:
   struct SIPPState {
-    SIPPState(const State& state, size_t interval)
+    SIPPState(const State& state, Cost interval)
         : state(state), interval(interval) {}
 
     bool operator==(const SIPPState& other) const {
@@ -148,7 +149,7 @@ class SIPP {
     }
 
     State state;
-    size_t interval;
+    Cost interval;
   };
 
   struct SIPPStateHasher {
@@ -177,9 +178,8 @@ class SIPP {
 
     bool mightHaveSolution(const State& goal) {
       const auto& si = safeIntervals(m_env.getLocation(goal));
-      return m_env.isSolution(goal) &&
-        !si.empty() &&
-        si.back().end == std::numeric_limits<Cost>::max();
+      return m_env.isSolution(goal) && !si.empty() &&
+             si.back().end == std::numeric_limits<Cost>::max();
     }
 
     bool isSolution(const SIPPState& s) {
@@ -209,7 +209,7 @@ class SIPP {
           if (si.start - m_time > end_t || si.end < start_t) {
             continue;
           }
-          int t;
+          Cost t;
           if (m_env.isCommandValid(s.state, m.state, m.action, m_lastGScore,
                                    end_t, si.start, si.end, t)) {
             // std::cout << "  gN: " << m.state << "," << i << "," << t << ","
@@ -250,28 +250,36 @@ class SIPP {
 
       // std::cout << location << ": " << std::endl;
       if (intervals.size() > 0) {
-        m_safeIntervals[location]; // create empty safe interval
-        int start = 0;
-        int lastEnd = 0;
-        for (const auto& interval : sortedIntervals) {
-          // std::cout << "  ci: " << interval.start << " - " << interval.end <<
-          // std::endl;
-          assert(interval.start <= interval.end);
-          assert(start <= interval.start);
+        m_safeIntervals[location];  // create empty safe interval
+        Cost start = 0;
+        Cost lastEnd = -1;
+        for (int i = 0; i < sortedIntervals.size(); i++) {
+          const auto& currentInterval = sortedIntervals[i];
+          // std::cout << "  ci: " << interval.start << " - " << interval.end
+          // << std::endl;
+
+          assert(currentInterval.start <= currentInterval.end);
+          if (lastEnd >= currentInterval.start) {
+            start = currentInterval.end + 1;
+            lastEnd = currentInterval.end;
+            continue;
+          }
+          assert(start <= currentInterval.start);
           // if (start + 1 != interval.start - 1) {
           // std::cout << start << "," << interval.start << std::endl;
           // assert(start + 1 < interval.start - 1);
-          if (start <= interval.start - 1) {
-            m_safeIntervals[location].push_back({start, interval.start - 1});
+          if (start <= currentInterval.start - 1) {
+            m_safeIntervals[location].push_back(
+                interval(start, currentInterval.start - 1));
           }
           // }
-          start = interval.end + 1;
-          lastEnd = interval.end;
+          start = currentInterval.end + 1;
+          lastEnd = currentInterval.end;
         }
-        if (lastEnd < std::numeric_limits<int>::max()) {
+        if (lastEnd < std::numeric_limits<Cost>::max()) {
           // assert(start < std::numeric_limits<int>::max());
           m_safeIntervals[location].push_back(
-              {start, std::numeric_limits<int>::max()});
+              interval(start, std::numeric_limits<Cost>::max()));
         }
       }
 
@@ -283,8 +291,7 @@ class SIPP {
       // }
     }
 
-    bool findSafeInterval(const State& state, Cost time, size_t& interval)
-    {
+    bool findSafeInterval(const State& state, Cost time, size_t& interval) {
       const auto& si = safeIntervals(m_env.getLocation(state));
       for (size_t idx = 0; idx < si.size(); ++idx) {
         if (si[idx].start <= time && si[idx].end >= time) {
