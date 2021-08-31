@@ -103,10 +103,11 @@ class SIPP {
                                   astarsolution, startTime);
     solution.cost = astarsolution.cost - startTime;
     solution.fmin = astarsolution.fmin;
+
     for (size_t i = 0; i < astarsolution.actions.size(); ++i) {
       Cost waitTime =
           astarsolution.actions[i].second - astarsolution.actions[i].first.time;
-      if (waitTime == 0) {
+      if (std::abs(waitTime) <= 1e-4) {
         solution.states.push_back(
             std::make_pair<>(astarsolution.states[i].first.state,
                              astarsolution.states[i].second));
@@ -114,6 +115,7 @@ class SIPP {
             std::make_pair<>(astarsolution.actions[i].first.action,
                              astarsolution.actions[i].second));
       } else {
+        std::cout << "ADDING WAIT" << std::endl;
         // additional wait action before
         solution.states.push_back(
             std::make_pair<>(astarsolution.states[i].first.state,
@@ -131,13 +133,23 @@ class SIPP {
         std::make_pair<>(astarsolution.states.back().first.state,
                          astarsolution.states.back().second));
 
+    double lastStateTime = startTime;
+    solution.states[0].first.time = startTime;
+    solution.states[0].second = startTime;
+    for (int j = 0; j < solution.states.size() - 1; j++) {
+      solution.states[j + 1].first.time =
+          lastStateTime + solution.actions[j].second;
+      solution.states[j + 1].second = solution.states[j + 1].first.time;
+      lastStateTime = solution.states[j + 1].first.time;
+    }
+    solution.cost = solution.states.back().first.time - startTime;
     return success;
   }
 
  private:
   // public:
   struct SIPPState {
-    SIPPState(const State& state, Cost interval)
+    SIPPState(const State& state, size_t interval)
         : state(state), interval(interval) {}
 
     bool operator==(const SIPPState& other) const {
@@ -149,7 +161,7 @@ class SIPP {
     }
 
     State state;
-    Cost interval;
+    size_t interval;
   };
 
   struct SIPPStateHasher {
@@ -206,12 +218,12 @@ class SIPP {
           const interval& si = sis[i];
           // std::cout << "  i " << i << ": " << si.start << "," << si.end <<
           // std::endl;
-          if (si.start - m_time > end_t || si.end < start_t) {
+          if (si.start > end_t || si.end < start_t) {
             continue;
           }
           Cost t;
           if (m_env.isCommandValid(s.state, m.state, m.action, m_lastGScore,
-                                   end_t, si.start, si.end, t)) {
+                                   end_t, si.start, si.end, t, m_time)) {
             // std::cout << "  gN: " << m.state << "," << i << "," << t << ","
             // << m_lastGScore << std::endl;
             neighbors.emplace_back(Neighbor<SIPPState, SIPPAction, Cost>(
@@ -248,38 +260,32 @@ class SIPP {
       std::vector<interval> sortedIntervals(intervals);
       std::sort(sortedIntervals.begin(), sortedIntervals.end());
 
-      // std::cout << location << ": " << std::endl;
+      std::cout << location << ": " << std::endl;
       if (intervals.size() > 0) {
         m_safeIntervals[location];  // create empty safe interval
-        Cost start = 0;
-        Cost lastEnd = -1;
-        for (int i = 0; i < sortedIntervals.size(); i++) {
+        Cost start = sortedIntervals[0].start;
+        if (start > 0) m_safeIntervals[location].push_back(interval(0, start));
+        Cost lastEnd = sortedIntervals[0].end;
+
+        for (int i = 1; i < sortedIntervals.size(); i++) {
           const auto& currentInterval = sortedIntervals[i];
-          // std::cout << "  ci: " << interval.start << " - " << interval.end
-          // << std::endl;
+          std::cout << "  ci: " << currentInterval.start << " - "
+                    << currentInterval.end << std::endl;
 
           assert(currentInterval.start <= currentInterval.end);
           if (lastEnd >= currentInterval.start) {
-            start = currentInterval.end + 1;
             lastEnd = currentInterval.end;
             continue;
           }
-          assert(start <= currentInterval.start);
-          // if (start + 1 != interval.start - 1) {
-          // std::cout << start << "," << interval.start << std::endl;
-          // assert(start + 1 < interval.start - 1);
-          if (start <= currentInterval.start - 1) {
-            m_safeIntervals[location].push_back(
-                interval(start, currentInterval.start - 1));
-          }
-          // }
-          start = currentInterval.end + 1;
+          m_safeIntervals[location].push_back(
+              interval(lastEnd, currentInterval.start));
           lastEnd = currentInterval.end;
+          // }
         }
         if (lastEnd < std::numeric_limits<Cost>::max()) {
           // assert(start < std::numeric_limits<int>::max());
           m_safeIntervals[location].push_back(
-              interval(start, std::numeric_limits<Cost>::max()));
+              interval(lastEnd, std::numeric_limits<Cost>::max()));
         }
       }
 
